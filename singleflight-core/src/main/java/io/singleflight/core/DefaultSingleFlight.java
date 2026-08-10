@@ -1,0 +1,69 @@
+package io.singleflight.core;
+
+import io.singleflight.model.InFlightCall;
+import io.singleflight.model.SingleFlightResult;
+
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.function.Supplier;
+
+public class DefaultSingleFlight<T> implements SingleFlight<T> {
+
+    private final ConcurrentHashMap<String, InFlightCall<T>> inFlightCalls;
+    private final Executor executor;
+
+    public DefaultSingleFlight(Executor executor) {
+        this.executor = executor;
+        this.inFlightCalls = new ConcurrentHashMap<>();
+    }
+
+    @Override
+    public SingleFlightResult<T> execute(String key, Supplier<? extends T> supplier) {
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(supplier, "supplier must not be null");
+
+        InFlightCall<T> newCall = new InFlightCall<>();
+        InFlightCall<T> currentCall = inFlightCalls.putIfAbsent(key, newCall);
+
+        // if there is already an in-flight call for the given key
+        if (currentCall != null) {
+            currentCall.markShared();
+            return currentCall.awaitResult();
+        }
+
+        // register new call and signal waiters when done
+        return newCall.executeSync(supplier, () -> inFlightCalls.remove(key, newCall));
+    }
+
+    @Override
+    public CompletableFuture<SingleFlightResult<T>> executeAsync(String key, Supplier<? extends T> supplier) {
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(supplier, "supplier must not be null");
+
+        InFlightCall<T> newCall = new InFlightCall<>();
+        InFlightCall<T> currentCall = inFlightCalls.putIfAbsent(key, newCall);
+
+        // if there is already an in-flight call for the given key
+        if (currentCall != null) {
+            currentCall.markShared();
+            return currentCall.resultFuture();
+        }
+
+        // exec new call asynchronously and return a future
+        try {
+            executor.execute(() -> newCall.executeAsync(supplier, () -> inFlightCalls.remove(key, newCall)));
+        } catch (Exception e) {
+            inFlightCalls.remove(key, newCall);
+            newCall.signalWaiters(new SingleFlightResult<>(null, e));
+        }
+        return newCall.resultFuture();
+    }
+
+    @Override
+    public void forget(String key) {
+        Objects.requireNonNull(key, "key must not be null");
+        inFlightCalls.remove(key);
+    }
+}
