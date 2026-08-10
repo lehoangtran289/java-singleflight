@@ -10,6 +10,10 @@ result is removed immediately after completion, so this is not a cache or a dist
 |------------------------------------|--------------------------------------------------------|
 | `singleflight-core`                | Framework-free Java 25 API and implementation          |
 | `singleflight-spring-boot-starter` | Spring Boot auto-configuration and typed-group factory |
+| `examples/singleflight-java-example` | Runnable framework-free coalescing demonstration     |
+| `examples/singleflight-spring-boot-example` | Runnable Spring Boot REST demonstration       |
+
+Runnable build and usage instructions are available in [`examples/README.md`](examples/README.md).
 
 ## Usage
 
@@ -62,6 +66,8 @@ Inject and use it like any other Spring bean:
 import io.singleflight.core.SingleFlight;
 import org.springframework.stereotype.Service;
 
+import java.util.concurrent.ExecutionException;
+
 @Service
 class UserService {
 
@@ -73,7 +79,7 @@ class UserService {
         this.repository = repository;
     }
 
-    User findById(long id) throws InterruptedException {
+    User findById(long id) throws InterruptedException, ExecutionException {
         return userSingleFlight.execute("user:" + id, () -> repository.findById(id));
     }
 }

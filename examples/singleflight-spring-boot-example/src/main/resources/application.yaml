@@ -1,0 +1,3 @@
+singleflight:
+  executor:
+    thread-name-prefix: example-singleflight-

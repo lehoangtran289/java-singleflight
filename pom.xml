@@ -14,6 +14,8 @@
     <modules>
         <module>singleflight-core</module>
         <module>singleflight-spring-boot-starter</module>
+        <module>examples/singleflight-java-example</module>
+        <module>examples/singleflight-spring-boot-example</module>
     </modules>
 
     <properties>
