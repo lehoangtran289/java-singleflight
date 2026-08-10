@@ -18,6 +18,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -210,6 +211,84 @@ class DefaultSingleFlightTest {
     }
 
     @Test
+    void fourThreadsCallingDuringOneSlowTaskShareSingleExecution() throws Exception {
+        ExecutorService supplierExecutor = newExecutor(1);
+        ExecutorService callers = newExecutor(4);
+        DefaultSingleFlight<Integer> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
+        CountDownLatch supplierStarted = new CountDownLatch(1);
+        CountDownLatch releaseSupplier = new CountDownLatch(1);
+        AtomicInteger invocationCount = new AtomicInteger();
+
+        List<Future<SingleFlightResult<Integer>>> results = submitConcurrentAsyncCalls(callers, 4,
+                () -> singleFlight.executeAsync("key", () -> {
+                    int invocation = invocationCount.incrementAndGet();
+                    supplierStarted.countDown();
+                    await(releaseSupplier);
+                    return invocation;
+                }));
+
+        try {
+            assertTrue(supplierStarted.await(1, SECONDS));
+            assertEquals(1, invocationCount.get());
+        } finally {
+            releaseSupplier.countDown();
+        }
+
+        for (Future<SingleFlightResult<Integer>> result : results) {
+            assertEquals(1, result.get(1, SECONDS).value());
+        }
+        assertEquals(1, invocationCount.get());
+    }
+
+    @Test
+    void callerBurstsSeparatedByTaskCompletionRunOncePerBurst() throws Exception {
+        ExecutorService supplierExecutor = newExecutor(1);
+        ExecutorService callers = newExecutor(2);
+        DefaultSingleFlight<Integer> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
+        CountDownLatch firstSupplierStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirstSupplier = new CountDownLatch(1);
+        CountDownLatch secondSupplierStarted = new CountDownLatch(1);
+        CountDownLatch releaseSecondSupplier = new CountDownLatch(1);
+        AtomicInteger invocationCount = new AtomicInteger();
+
+        Supplier<CompletableFuture<SingleFlightResult<Integer>>> call = () -> singleFlight.executeAsync("key", () -> {
+            int invocation = invocationCount.incrementAndGet();
+            if (invocation == 1) {
+                firstSupplierStarted.countDown();
+                await(releaseFirstSupplier);
+            } else if (invocation == 2) {
+                secondSupplierStarted.countDown();
+                await(releaseSecondSupplier);
+            }
+            return invocation;
+        });
+
+        List<Future<SingleFlightResult<Integer>>> firstBurst = submitConcurrentAsyncCalls(callers, 2, call);
+        try {
+            assertTrue(firstSupplierStarted.await(1, SECONDS));
+            assertEquals(1, invocationCount.get());
+        } finally {
+            releaseFirstSupplier.countDown();
+        }
+        for (Future<SingleFlightResult<Integer>> result : firstBurst) {
+            assertEquals(1, result.get(1, SECONDS).value());
+        }
+
+        // Arriving three seconds after a one-second task means the first task has completed.
+        List<Future<SingleFlightResult<Integer>>> secondBurst = submitConcurrentAsyncCalls(callers, 2, call);
+        try {
+            assertTrue(secondSupplierStarted.await(1, SECONDS));
+            assertEquals(2, invocationCount.get());
+        } finally {
+            releaseSecondSupplier.countDown();
+        }
+        for (Future<SingleFlightResult<Integer>> result : secondBurst) {
+            assertEquals(2, result.get(1, SECONDS).value());
+        }
+        assertEquals(2, invocationCount.get());
+    }
+
+    @Test
     void cancellingOneAsyncFutureDoesNotCancelOtherCallers() throws Exception {
         ExecutorService supplierExecutor = newExecutor(1);
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
@@ -357,6 +436,31 @@ class DefaultSingleFlightTest {
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         executors.add(executor);
         return executor;
+    }
+
+    private static <T> List<Future<SingleFlightResult<T>>> submitConcurrentAsyncCalls(
+            ExecutorService callers,
+            int callerCount,
+            Supplier<CompletableFuture<SingleFlightResult<T>>> call) throws InterruptedException {
+        CountDownLatch callersReady = new CountDownLatch(callerCount);
+        CountDownLatch startCalls = new CountDownLatch(1);
+        CountDownLatch callsRegistered = new CountDownLatch(callerCount);
+        List<Future<SingleFlightResult<T>>> results = new ArrayList<>(callerCount);
+
+        for (int caller = 0; caller < callerCount; caller++) {
+            results.add(callers.submit(() -> {
+                callersReady.countDown();
+                await(startCalls);
+                CompletableFuture<SingleFlightResult<T>> result = call.get();
+                callsRegistered.countDown();
+                return result.join();
+            }));
+        }
+
+        assertTrue(callersReady.await(1, SECONDS));
+        startCalls.countDown();
+        assertTrue(callsRegistered.await(1, SECONDS));
+        return results;
     }
 
     private static void await(CountDownLatch latch) {
