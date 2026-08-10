@@ -1,15 +1,14 @@
 package io.singleflight.core;
 
-import io.singleflight.model.SingleFlightResult;
-
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Supplier;
 
 public interface SingleFlight<T> {
 
-    SingleFlightResult<T> execute(String key, Supplier<? extends T> supplier);
+    T execute(String key, Supplier<? extends T> supplier) throws InterruptedException, ExecutionException;
 
-    CompletableFuture<SingleFlightResult<T>> executeAsync(String key, Supplier<? extends T> supplier);
+    CompletableFuture<T> executeAsync(String key, Supplier<? extends T> supplier);
 
     /**
      * Forget tells the singleflight to forget about a key.

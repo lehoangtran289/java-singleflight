@@ -74,10 +74,8 @@ class UserService {
         this.repository = repository;
     }
 
-    User findById(long id) throws Exception {
-        return userSingleFlight
-                .execute("user:" + id, () -> repository.findById(id))
-                .getOrThrow();
+    User findById(long id) throws InterruptedException {
+        return userSingleFlight.execute("user:" + id, () -> repository.findById(id));
     }
 }
 ```
@@ -101,8 +99,11 @@ Set `singleflight.enabled=false` to disable all starter auto-configuration.
 
 ### Logging
 
-The core module uses `java.util.logging`, so it adds no logging dependency. Failure paths log the
-original exception at `SEVERE`; interrupted followers log at `WARNING`; 
+The core module uses `java.util.logging`, so it adds no logging dependency. `execute`/`executeAsync`
+propagate the supplier's exception (or, for a synchronous follower, an `InterruptedException` if
+its thread is interrupted while waiting) directly to the caller rather than logging it. Only a
+rejected asynchronous submission — an internal executor failure unrelated to the supplier — is
+logged, at `SEVERE`.
 
 Spring Boot applications can enable the lifecycle records with:
 

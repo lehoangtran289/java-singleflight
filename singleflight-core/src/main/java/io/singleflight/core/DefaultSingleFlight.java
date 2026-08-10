@@ -1,11 +1,11 @@
 package io.singleflight.core;
 
 import io.singleflight.model.InFlightCall;
-import io.singleflight.model.SingleFlightResult;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 import java.util.logging.Level;
@@ -24,7 +24,7 @@ public class DefaultSingleFlight<T> implements SingleFlight<T> {
     }
 
     @Override
-    public SingleFlightResult<T> execute(String key, Supplier<? extends T> supplier) {
+    public T execute(String key, Supplier<? extends T> supplier) throws InterruptedException, ExecutionException {
         Objects.requireNonNull(key, "key must not be null");
         Objects.requireNonNull(supplier, "supplier must not be null");
 
@@ -33,8 +33,7 @@ public class DefaultSingleFlight<T> implements SingleFlight<T> {
 
         // if there is already an in-flight call for the given key
         if (currentCall != null) {
-            currentCall.markShared();
-            return currentCall.awaitResult();
+            return currentCall.await();
         }
 
         // register new call and signal waiters when done
@@ -42,7 +41,7 @@ public class DefaultSingleFlight<T> implements SingleFlight<T> {
     }
 
     @Override
-    public CompletableFuture<SingleFlightResult<T>> executeAsync(String key, Supplier<? extends T> supplier) {
+    public CompletableFuture<T> executeAsync(String key, Supplier<? extends T> supplier) {
         Objects.requireNonNull(key, "key must not be null");
         Objects.requireNonNull(supplier, "supplier must not be null");
 
@@ -51,7 +50,6 @@ public class DefaultSingleFlight<T> implements SingleFlight<T> {
 
         // if there is already an in-flight call for the given key
         if (currentCall != null) {
-            currentCall.markShared();
             return currentCall.resultFuture();
         }
 
@@ -61,7 +59,7 @@ public class DefaultSingleFlight<T> implements SingleFlight<T> {
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, e, () -> "SingleFlight executor rejected call for key: " + key);
             inFlightCalls.remove(key, newCall);
-            newCall.signalWaiters(new SingleFlightResult<>(null, e));
+            newCall.completeExceptionally(e);
         }
         return newCall.resultFuture();
     }

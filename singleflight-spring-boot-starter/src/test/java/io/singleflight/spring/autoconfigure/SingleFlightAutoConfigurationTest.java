@@ -4,7 +4,6 @@ import io.singleflight.config.SingleFlightAutoConfiguration;
 import io.singleflight.config.SingleFlightProperties;
 import io.singleflight.core.DefaultSingleFlight;
 import io.singleflight.core.SingleFlight;
-import io.singleflight.model.SingleFlightResult;
 import io.singleflight.service.SingleFlightFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -98,7 +97,7 @@ class SingleFlightAutoConfigurationTest {
                     SingleFlight<String> singleFlight = context.getBean(SingleFlightFactory.class).create();
 
                     assertThat(context.getBean("singleFlightExecutor")).isSameAs(directExecutor);
-                    assertThat(singleFlight.executeAsync("key", () -> "value").join().value()).isEqualTo("value");
+                    assertThat(singleFlight.executeAsync("key", () -> "value").join()).isEqualTo("value");
                 });
     }
 
@@ -124,19 +123,19 @@ class SingleFlightAutoConfigurationTest {
                     CountDownLatch releaseSupplier = new CountDownLatch(1);
                     AtomicInteger invocationCount = new AtomicInteger();
 
-                    CompletableFuture<SingleFlightResult<String>> first = singleFlight.executeAsync("user:123", () -> {
+                    CompletableFuture<String> first = singleFlight.executeAsync("user:123", () -> {
                         invocationCount.incrementAndGet();
                         supplierStarted.countDown();
                         await(releaseSupplier);
                         return "user";
                     });
                     assertThat(supplierStarted.await(1, SECONDS)).isTrue();
-                    CompletableFuture<SingleFlightResult<String>> second = singleFlight.executeAsync(
+                    CompletableFuture<String> second = singleFlight.executeAsync(
                             "user:123", () -> "unexpected");
 
                     releaseSupplier.countDown();
 
-                    assertThat(List.of(first.join().value(), second.join().value()))
+                    assertThat(List.of(first.join(), second.join()))
                             .containsExactly("user", "user");
                     assertThat(invocationCount).hasValue(1);
                 });

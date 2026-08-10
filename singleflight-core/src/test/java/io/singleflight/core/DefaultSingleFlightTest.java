@@ -1,6 +1,5 @@
 package io.singleflight.core;
 
-import io.singleflight.model.SingleFlightResult;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -8,6 +7,7 @@ import org.junit.jupiter.api.Timeout;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -23,7 +23,8 @@ import java.util.function.Supplier;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -42,23 +43,21 @@ class DefaultSingleFlightTest {
     }
 
     @Test
-    void executeReturnsSupplierValue() {
+    void executeReturnsSupplierValue() throws Exception {
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(Runnable::run);
 
-        SingleFlightResult<String> result = singleFlight.execute("key", () -> "value");
+        String value = singleFlight.execute("key", () -> "value");
 
-        assertEquals("value", result.value());
-        assertNull(result.exception());
+        assertEquals("value", value);
     }
 
     @Test
-    void executeAllowsBlankKeysAndNullValues() {
+    void executeAllowsBlankKeysAndNullValues() throws Exception {
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(Runnable::run);
 
-        SingleFlightResult<String> result = singleFlight.execute("", () -> null);
+        String value = singleFlight.execute("", () -> null);
 
-        assertNull(result.value());
-        assertNull(result.exception());
+        assertNull(value);
     }
 
     @Test
@@ -66,24 +65,23 @@ class DefaultSingleFlightTest {
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(Runnable::run);
         IllegalStateException failure = new IllegalStateException("boom");
 
-        SingleFlightResult<String> result = singleFlight.execute("key", () -> {
+        IllegalStateException thrown = assertThrows(IllegalStateException.class, () -> singleFlight.execute("key", () -> {
             throw failure;
-        });
+        }));
 
-        assertNull(result.value());
-        assertSame(failure, result.exception());
+        assertSame(failure, thrown);
     }
 
     @Test
-    void executeRunsAgainAfterPreviousCallCompletes() {
+    void executeRunsAgainAfterPreviousCallCompletes() throws Exception {
         DefaultSingleFlight<Integer> singleFlight = new DefaultSingleFlight<>(Runnable::run);
         AtomicInteger invocationCount = new AtomicInteger();
 
-        SingleFlightResult<Integer> first = singleFlight.execute("key", invocationCount::incrementAndGet);
-        SingleFlightResult<Integer> second = singleFlight.execute("key", invocationCount::incrementAndGet);
+        Integer first = singleFlight.execute("key", invocationCount::incrementAndGet);
+        Integer second = singleFlight.execute("key", invocationCount::incrementAndGet);
 
-        assertEquals(1, first.value());
-        assertEquals(2, second.value());
+        assertEquals(1, first);
+        assertEquals(2, second);
         assertEquals(2, invocationCount.get());
     }
 
@@ -96,7 +94,7 @@ class DefaultSingleFlightTest {
         CountDownLatch followerStarted = new CountDownLatch(1);
         AtomicInteger invocationCount = new AtomicInteger();
 
-        Future<SingleFlightResult<String>> leader = callers.submit(() -> singleFlight.execute("key", () -> {
+        Future<String> leader = callers.submit(() -> singleFlight.execute("key", () -> {
             invocationCount.incrementAndGet();
             supplierStarted.countDown();
             await(releaseSupplier);
@@ -104,7 +102,7 @@ class DefaultSingleFlightTest {
         }));
 
         assertTrue(supplierStarted.await(1, SECONDS));
-        Future<SingleFlightResult<String>> follower = callers.submit(() -> {
+        Future<String> follower = callers.submit(() -> {
             followerStarted.countDown();
             return singleFlight.execute("key", () -> {
                 invocationCount.incrementAndGet();
@@ -119,8 +117,8 @@ class DefaultSingleFlightTest {
             releaseSupplier.countDown();
         }
 
-        assertEquals("shared-value", leader.get().value());
-        assertEquals("shared-value", follower.get().value());
+        assertEquals("shared-value", leader.get());
+        assertEquals("shared-value", follower.get());
         assertEquals(1, invocationCount.get());
     }
 
@@ -130,29 +128,28 @@ class DefaultSingleFlightTest {
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
         CountDownLatch bothSuppliersStarted = new CountDownLatch(2);
 
-        CompletableFuture<SingleFlightResult<String>> first = singleFlight.executeAsync("first", () -> {
+        CompletableFuture<String> first = singleFlight.executeAsync("first", () -> {
             bothSuppliersStarted.countDown();
             await(bothSuppliersStarted);
             return "first-value";
         });
-        CompletableFuture<SingleFlightResult<String>> second = singleFlight.executeAsync("second", () -> {
+        CompletableFuture<String> second = singleFlight.executeAsync("second", () -> {
             bothSuppliersStarted.countDown();
             await(bothSuppliersStarted);
             return "second-value";
         });
 
-        assertEquals("first-value", first.join().value());
-        assertEquals("second-value", second.join().value());
+        assertEquals("first-value", first.join());
+        assertEquals("second-value", second.join());
     }
 
     @Test
     void executeAsyncReturnsSupplierValue() {
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(Runnable::run);
 
-        SingleFlightResult<String> result = singleFlight.executeAsync("key", () -> "value").join();
+        String value = singleFlight.executeAsync("key", () -> "value").join();
 
-        assertEquals("value", result.value());
-        assertNull(result.exception());
+        assertEquals("value", value);
     }
 
     @Test
@@ -160,12 +157,12 @@ class DefaultSingleFlightTest {
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(Runnable::run);
         IllegalStateException failure = new IllegalStateException("boom");
 
-        SingleFlightResult<String> result = singleFlight.executeAsync("key", () -> {
+        CompletableFuture<String> future = singleFlight.executeAsync("key", () -> {
             throw failure;
-        }).join();
+        });
 
-        assertNull(result.value());
-        assertSame(failure, result.exception());
+        CompletionException thrown = assertThrows(CompletionException.class, future::join);
+        assertSame(failure, thrown.getCause());
     }
 
     @Test
@@ -175,10 +172,10 @@ class DefaultSingleFlightTest {
             throw rejection;
         });
 
-        SingleFlightResult<String> result = singleFlight.executeAsync("key", () -> "unused").join();
+        CompletableFuture<String> future = singleFlight.executeAsync("key", () -> "unused");
 
-        assertNull(result.value());
-        assertSame(rejection, result.exception());
+        CompletionException thrown = assertThrows(CompletionException.class, future::join);
+        assertSame(rejection, thrown.getCause());
     }
 
     @Test
@@ -189,7 +186,7 @@ class DefaultSingleFlightTest {
         CountDownLatch releaseSupplier = new CountDownLatch(1);
         AtomicInteger invocationCount = new AtomicInteger();
 
-        CompletableFuture<SingleFlightResult<String>> leader = singleFlight.executeAsync("key", () -> {
+        CompletableFuture<String> leader = singleFlight.executeAsync("key", () -> {
             invocationCount.incrementAndGet();
             supplierStarted.countDown();
             await(releaseSupplier);
@@ -197,7 +194,7 @@ class DefaultSingleFlightTest {
         });
 
         assertTrue(supplierStarted.await(1, SECONDS));
-        CompletableFuture<SingleFlightResult<String>> follower = singleFlight.executeAsync("key", () -> {
+        CompletableFuture<String> follower = singleFlight.executeAsync("key", () -> {
             invocationCount.incrementAndGet();
             return "unexpected";
         });
@@ -205,8 +202,8 @@ class DefaultSingleFlightTest {
         assertNotSame(leader, follower);
         releaseSupplier.countDown();
 
-        assertEquals("shared-value", leader.join().value());
-        assertEquals("shared-value", follower.join().value());
+        assertEquals("shared-value", leader.join());
+        assertEquals("shared-value", follower.join());
         assertEquals(1, invocationCount.get());
     }
 
@@ -219,7 +216,7 @@ class DefaultSingleFlightTest {
         CountDownLatch releaseSupplier = new CountDownLatch(1);
         AtomicInteger invocationCount = new AtomicInteger();
 
-        List<Future<SingleFlightResult<Integer>>> results = submitConcurrentAsyncCalls(callers, 4,
+        List<Future<Integer>> results = submitConcurrentAsyncCalls(callers, 4,
                 () -> singleFlight.executeAsync("key", () -> {
                     int invocation = invocationCount.incrementAndGet();
                     supplierStarted.countDown();
@@ -234,8 +231,8 @@ class DefaultSingleFlightTest {
             releaseSupplier.countDown();
         }
 
-        for (Future<SingleFlightResult<Integer>> result : results) {
-            assertEquals(1, result.get(1, SECONDS).value());
+        for (Future<Integer> result : results) {
+            assertEquals(1, result.get(1, SECONDS));
         }
         assertEquals(1, invocationCount.get());
     }
@@ -251,7 +248,7 @@ class DefaultSingleFlightTest {
         CountDownLatch releaseSecondSupplier = new CountDownLatch(1);
         AtomicInteger invocationCount = new AtomicInteger();
 
-        Supplier<CompletableFuture<SingleFlightResult<Integer>>> call = () -> singleFlight.executeAsync("key", () -> {
+        Supplier<CompletableFuture<Integer>> call = () -> singleFlight.executeAsync("key", () -> {
             int invocation = invocationCount.incrementAndGet();
             if (invocation == 1) {
                 firstSupplierStarted.countDown();
@@ -263,27 +260,27 @@ class DefaultSingleFlightTest {
             return invocation;
         });
 
-        List<Future<SingleFlightResult<Integer>>> firstBurst = submitConcurrentAsyncCalls(callers, 2, call);
+        List<Future<Integer>> firstBurst = submitConcurrentAsyncCalls(callers, 2, call);
         try {
             assertTrue(firstSupplierStarted.await(1, SECONDS));
             assertEquals(1, invocationCount.get());
         } finally {
             releaseFirstSupplier.countDown();
         }
-        for (Future<SingleFlightResult<Integer>> result : firstBurst) {
-            assertEquals(1, result.get(1, SECONDS).value());
+        for (Future<Integer> result : firstBurst) {
+            assertEquals(1, result.get(1, SECONDS));
         }
 
         // Arriving three seconds after a one-second task means the first task has completed.
-        List<Future<SingleFlightResult<Integer>>> secondBurst = submitConcurrentAsyncCalls(callers, 2, call);
+        List<Future<Integer>> secondBurst = submitConcurrentAsyncCalls(callers, 2, call);
         try {
             assertTrue(secondSupplierStarted.await(1, SECONDS));
             assertEquals(2, invocationCount.get());
         } finally {
             releaseSecondSupplier.countDown();
         }
-        for (Future<SingleFlightResult<Integer>> result : secondBurst) {
-            assertEquals(2, result.get(1, SECONDS).value());
+        for (Future<Integer> result : secondBurst) {
+            assertEquals(2, result.get(1, SECONDS));
         }
         assertEquals(2, invocationCount.get());
     }
@@ -295,20 +292,20 @@ class DefaultSingleFlightTest {
         CountDownLatch supplierStarted = new CountDownLatch(1);
         CountDownLatch releaseSupplier = new CountDownLatch(1);
 
-        CompletableFuture<SingleFlightResult<String>> first = singleFlight.executeAsync("key", () -> {
+        CompletableFuture<String> first = singleFlight.executeAsync("key", () -> {
             supplierStarted.countDown();
             await(releaseSupplier);
             return "value";
         });
 
         assertTrue(supplierStarted.await(1, SECONDS));
-        CompletableFuture<SingleFlightResult<String>> second = singleFlight.executeAsync("key", () -> "unexpected");
+        CompletableFuture<String> second = singleFlight.executeAsync("key", () -> "unexpected");
 
         assertTrue(first.cancel(true));
         releaseSupplier.countDown();
 
         assertTrue(first.isCancelled());
-        assertEquals("value", second.join().value());
+        assertEquals("value", second.join());
     }
 
     @Test
@@ -319,14 +316,14 @@ class DefaultSingleFlightTest {
         CountDownLatch supplierStarted = new CountDownLatch(1);
         CountDownLatch releaseSupplier = new CountDownLatch(1);
 
-        CompletableFuture<SingleFlightResult<String>> leader = singleFlight.executeAsync("key", () -> {
+        CompletableFuture<String> leader = singleFlight.executeAsync("key", () -> {
             supplierStarted.countDown();
             await(releaseSupplier);
             return "shared-value";
         });
         assertTrue(supplierStarted.await(1, SECONDS));
 
-        Future<SingleFlightResult<String>> follower = callerExecutor.submit(
+        Future<String> follower = callerExecutor.submit(
                 () -> singleFlight.execute("key", () -> "unexpected"));
         try {
             assertThrows(TimeoutException.class, () -> follower.get(100, MILLISECONDS));
@@ -334,8 +331,8 @@ class DefaultSingleFlightTest {
             releaseSupplier.countDown();
         }
 
-        assertEquals("shared-value", leader.join().value());
-        assertEquals("shared-value", follower.get().value());
+        assertEquals("shared-value", leader.join());
+        assertEquals("shared-value", follower.get());
     }
 
     @Test
@@ -346,18 +343,20 @@ class DefaultSingleFlightTest {
         CountDownLatch releaseSupplier = new CountDownLatch(1);
         IllegalArgumentException failure = new IllegalArgumentException("boom");
 
-        CompletableFuture<SingleFlightResult<String>> leader = singleFlight.executeAsync("key", () -> {
+        CompletableFuture<String> leader = singleFlight.executeAsync("key", () -> {
             supplierStarted.countDown();
             await(releaseSupplier);
             throw failure;
         });
         assertTrue(supplierStarted.await(1, SECONDS));
-        CompletableFuture<SingleFlightResult<String>> follower = singleFlight.executeAsync("key", () -> "unexpected");
+        CompletableFuture<String> follower = singleFlight.executeAsync("key", () -> "unexpected");
 
         releaseSupplier.countDown();
 
-        assertSame(failure, leader.join().exception());
-        assertSame(failure, follower.join().exception());
+        CompletionException leaderThrown = assertThrows(CompletionException.class, leader::join);
+        CompletionException followerThrown = assertThrows(CompletionException.class, follower::join);
+        assertSame(failure, leaderThrown.getCause());
+        assertSame(failure, followerThrown.getCause());
     }
 
     @Test
@@ -367,7 +366,7 @@ class DefaultSingleFlightTest {
         CountDownLatch firstSupplierStarted = new CountDownLatch(1);
         CountDownLatch releaseFirstSupplier = new CountDownLatch(1);
 
-        CompletableFuture<SingleFlightResult<String>> first = singleFlight.executeAsync("key", () -> {
+        CompletableFuture<String> first = singleFlight.executeAsync("key", () -> {
             firstSupplierStarted.countDown();
             await(releaseFirstSupplier);
             return "old-value";
@@ -375,15 +374,15 @@ class DefaultSingleFlightTest {
         assertTrue(firstSupplierStarted.await(1, SECONDS));
 
         singleFlight.forget("key");
-        SingleFlightResult<String> second = singleFlight.execute("key", () -> "new-value");
+        String second = singleFlight.execute("key", () -> "new-value");
         releaseFirstSupplier.countDown();
 
-        assertEquals("new-value", second.value());
-        assertEquals("old-value", first.join().value());
+        assertEquals("new-value", second);
+        assertEquals("old-value", first.join());
     }
 
     @Test
-    void interruptedSynchronousFollowerReturnsFailureAndRestoresInterruptFlag() throws Exception {
+    void interruptedSynchronousFollowerThrowsInterruptedException() throws Exception {
         ExecutorService supplierExecutor = newExecutor(1);
         ExecutorService callerExecutor = newExecutor(1);
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
@@ -392,33 +391,36 @@ class DefaultSingleFlightTest {
         AtomicReference<Thread> followerThread = new AtomicReference<>();
         AtomicBoolean interruptedAfterExecute = new AtomicBoolean();
 
-        CompletableFuture<SingleFlightResult<String>> leader = singleFlight.executeAsync("key", () -> {
+        CompletableFuture<String> leader = singleFlight.executeAsync("key", () -> {
             supplierStarted.countDown();
             await(releaseSupplier);
             return "value";
         });
         assertTrue(supplierStarted.await(1, SECONDS));
 
-        Future<SingleFlightResult<String>> follower = callerExecutor.submit(() -> {
+        Future<InterruptedException> follower = callerExecutor.submit(() -> {
             followerThread.set(Thread.currentThread());
-            SingleFlightResult<String> result = singleFlight.execute("key", () -> "unexpected");
-            interruptedAfterExecute.set(Thread.currentThread().isInterrupted());
-            return result;
+            try {
+                singleFlight.execute("key", () -> "unexpected");
+                return null;
+            } catch (InterruptedException expected) {
+                interruptedAfterExecute.set(Thread.currentThread().isInterrupted());
+                return expected;
+            }
         });
 
         try {
             waitUntilBlocked(followerThread);
             followerThread.get().interrupt();
-            SingleFlightResult<String> result = follower.get(1, SECONDS);
+            InterruptedException result = follower.get(1, SECONDS);
 
-            assertNull(result.value());
-            assertInstanceOf(InterruptedException.class, result.exception());
-            assertTrue(interruptedAfterExecute.get());
+            assertNotNull(result);
+            assertFalse(interruptedAfterExecute.get());
         } finally {
             releaseSupplier.countDown();
         }
 
-        assertEquals("value", leader.join().value());
+        assertEquals("value", leader.join());
     }
 
     @Test
@@ -438,20 +440,20 @@ class DefaultSingleFlightTest {
         return executor;
     }
 
-    private static <T> List<Future<SingleFlightResult<T>>> submitConcurrentAsyncCalls(
+    private static <T> List<Future<T>> submitConcurrentAsyncCalls(
             ExecutorService callers,
             int callerCount,
-            Supplier<CompletableFuture<SingleFlightResult<T>>> call) throws InterruptedException {
+            Supplier<CompletableFuture<T>> call) throws InterruptedException {
         CountDownLatch callersReady = new CountDownLatch(callerCount);
         CountDownLatch startCalls = new CountDownLatch(1);
         CountDownLatch callsRegistered = new CountDownLatch(callerCount);
-        List<Future<SingleFlightResult<T>>> results = new ArrayList<>(callerCount);
+        List<Future<T>> results = new ArrayList<>(callerCount);
 
         for (int caller = 0; caller < callerCount; caller++) {
             results.add(callers.submit(() -> {
                 callersReady.countDown();
                 await(startCalls);
-                CompletableFuture<SingleFlightResult<T>> result = call.get();
+                CompletableFuture<T> result = call.get();
                 callsRegistered.countDown();
                 return result.join();
             }));
