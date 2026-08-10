@@ -3,8 +3,12 @@ package io.singleflight.model;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class InFlightCall<T> {
+
+    private static final Logger LOGGER = Logger.getLogger(InFlightCall.class.getName());
 
     private final CompletableFuture<SingleFlightResult<T>> resultFuture = new CompletableFuture<>();
     private final AtomicInteger duplicateCount = new AtomicInteger();
@@ -22,8 +26,10 @@ public final class InFlightCall<T> {
             return resultFuture.get();
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+            LOGGER.log(Level.WARNING, exception, () -> "Interrupted while waiting for a shared SingleFlight result");
             return new SingleFlightResult<>(null, exception);
         } catch (Exception exception) {
+            LOGGER.log(Level.SEVERE, exception, () -> "Failed while waiting for a shared SingleFlight result");
             return new SingleFlightResult<>(null, exception);
         }
     }

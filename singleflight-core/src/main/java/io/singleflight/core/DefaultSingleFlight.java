@@ -8,8 +8,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class DefaultSingleFlight<T> implements SingleFlight<T> {
+
+    private static final Logger LOGGER = Logger.getLogger(DefaultSingleFlight.class.getName());
 
     private final ConcurrentHashMap<String, InFlightCall<T>> inFlightCalls;
     private final Executor executor;
@@ -55,6 +59,7 @@ public class DefaultSingleFlight<T> implements SingleFlight<T> {
         try {
             executor.execute(() -> newCall.executeAsync(supplier, () -> inFlightCalls.remove(key, newCall)));
         } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, e, () -> "SingleFlight executor rejected call for key: " + key);
             inFlightCalls.remove(key, newCall);
             newCall.signalWaiters(new SingleFlightResult<>(null, e));
         }

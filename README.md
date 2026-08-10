@@ -98,3 +98,16 @@ ExecutorService singleFlightExecutor() {
 ```
 
 Set `singleflight.enabled=false` to disable all starter auto-configuration.
+
+### Logging
+
+The core module uses `java.util.logging`, so it adds no logging dependency. Failure paths log the
+original exception at `SEVERE`; interrupted followers log at `WARNING`; 
+
+Spring Boot applications can enable the lifecycle records with:
+
+```yaml
+logging:
+  level:
+    io.singleflight: DEBUG
+```
