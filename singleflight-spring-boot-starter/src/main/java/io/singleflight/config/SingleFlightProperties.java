@@ -28,22 +28,8 @@ public class SingleFlightProperties {
 
     public static class ExecutorProperties {
 
-        /** Number of threads used to execute asynchronous suppliers for independent keys. */
-        private int poolSize = Math.max(2, Runtime.getRuntime().availableProcessors());
-
         /** Prefix assigned to worker thread names. */
         private String threadNamePrefix = "singleflight-";
-
-        public int getPoolSize() {
-            return poolSize;
-        }
-
-        public void setPoolSize(int poolSize) {
-            if (poolSize < 1) {
-                throw new IllegalArgumentException("singleflight.executor.pool-size must be at least 1");
-            }
-            this.poolSize = poolSize;
-        }
 
         public String getThreadNamePrefix() {
             return threadNamePrefix;

@@ -35,7 +35,6 @@ Configure the managed executor in `application.yaml`:
 singleflight:
   enabled: true
   executor:
-    pool-size: 8
     thread-name-prefix: singleflight-
 ```
 

@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -33,7 +33,7 @@ class SingleFlightAutoConfigurationTest {
             assertThat(context).hasSingleBean(SingleFlightProperties.class);
             assertThat(context).hasSingleBean(SingleFlightFactory.class);
             assertThat(context).hasSingleBean(SingleFlight.class);
-            assertThat(context).hasSingleBean(ThreadPoolExecutor.class);
+            assertThat(context).hasSingleBean(ExecutorService.class);
             assertThat(context).hasBean("singleFlightExecutor");
         });
     }
@@ -41,20 +41,21 @@ class SingleFlightAutoConfigurationTest {
     @Test
     void bindsExecutorConfiguration() {
         contextRunner
-                .withPropertyValues(
-                        "singleflight.executor.pool-size=3",
-                        "singleflight.executor.thread-name-prefix=configured-flight-")
+                .withPropertyValues("singleflight.executor.thread-name-prefix=configured-flight-")
                 .run(context -> {
                     SingleFlightProperties properties = context.getBean(SingleFlightProperties.class);
-                    ThreadPoolExecutor executor = context.getBean("singleFlightExecutor", ThreadPoolExecutor.class);
+                    ExecutorService executor = context.getBean("singleFlightExecutor", ExecutorService.class);
                     CompletableFuture<String> threadName = new CompletableFuture<>();
+                    CompletableFuture<Boolean> isVirtual = new CompletableFuture<>();
 
-                    executor.execute(() -> threadName.complete(Thread.currentThread().getName()));
+                    executor.execute(() -> {
+                        threadName.complete(Thread.currentThread().getName());
+                        isVirtual.complete(Thread.currentThread().isVirtual());
+                    });
 
-                    assertThat(properties.getExecutor().getPoolSize()).isEqualTo(3);
-                    assertThat(executor.getCorePoolSize()).isEqualTo(3);
-                    assertThat(executor.getMaximumPoolSize()).isEqualTo(3);
+                    assertThat(properties.getExecutor().getThreadNamePrefix()).isEqualTo("configured-flight-");
                     assertThat(threadName.get(1, SECONDS)).startsWith("configured-flight-");
+                    assertThat(isVirtual.get(1, SECONDS)).isTrue();
                 });
     }
 
@@ -71,20 +72,13 @@ class SingleFlightAutoConfigurationTest {
     }
 
     @Test
-    void rejectsNonPositivePoolSize() {
-        contextRunner
-                .withPropertyValues("singleflight.executor.pool-size=0")
-                .run(context -> assertThat(context).hasFailed());
-    }
-
-    @Test
     void shutsDownManagedExecutorWithApplicationContext() {
-        AtomicReference<ThreadPoolExecutor> executorReference = new AtomicReference<>();
+        AtomicReference<ExecutorService> executorReference = new AtomicReference<>();
 
         contextRunner.run(context -> executorReference.set(
-                context.getBean("singleFlightExecutor", ThreadPoolExecutor.class)));
+                context.getBean("singleFlightExecutor", ExecutorService.class)));
 
-        assertThat(executorReference.get()).isNotNull().matches(ThreadPoolExecutor::isShutdown);
+        assertThat(executorReference.get()).isNotNull().matches(ExecutorService::isShutdown);
     }
 
     @Test
@@ -116,7 +110,6 @@ class SingleFlightAutoConfigurationTest {
     @Test
     void factoryCreatesTypedSingleFlightThatCoalescesCalls() {
         contextRunner
-                .withPropertyValues("singleflight.executor.pool-size=2")
                 .run(context -> {
                     SingleFlight<String> singleFlight = context.getBean(SingleFlightFactory.class).create();
                     CountDownLatch supplierStarted = new CountDownLatch(1);

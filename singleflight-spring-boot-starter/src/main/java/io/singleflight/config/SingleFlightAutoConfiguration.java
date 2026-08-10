@@ -11,10 +11,9 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 import java.util.concurrent.Executor;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 @AutoConfiguration
 @ConditionalOnClass(SingleFlight.class)
@@ -26,19 +25,12 @@ public class SingleFlightAutoConfiguration {
 
     @Bean(name = EXECUTOR_BEAN_NAME, destroyMethod = "shutdown")
     @ConditionalOnMissingBean(name = EXECUTOR_BEAN_NAME)
-    public ThreadPoolExecutor singleFlightExecutor(SingleFlightProperties properties) {
+    public ExecutorService singleFlightExecutor(SingleFlightProperties properties) {
         SingleFlightProperties.ExecutorProperties executorProperties = properties.getExecutor();
-        int poolSize = executorProperties.getPoolSize();
-        ThreadFactory threadFactory = Thread.ofPlatform()
+        ThreadFactory threadFactory = Thread.ofVirtual()
                 .name(executorProperties.getThreadNamePrefix(), 0)
                 .factory();
-        return new ThreadPoolExecutor(
-                poolSize,
-                poolSize,
-                0,
-                TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(),
-                threadFactory);
+        return Executors.newThreadPerTaskExecutor(threadFactory);
     }
 
     @Bean

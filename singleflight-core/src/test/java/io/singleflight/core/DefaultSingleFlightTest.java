@@ -88,7 +88,7 @@ class DefaultSingleFlightTest {
     @Test
     void executeCoalescesConcurrentCallsForSameKey() throws Exception {
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(Runnable::run);
-        ExecutorService callers = newExecutor(2);
+        ExecutorService callers = newVirtualExecutor();
         CountDownLatch supplierStarted = new CountDownLatch(1);
         CountDownLatch releaseSupplier = new CountDownLatch(1);
         CountDownLatch followerStarted = new CountDownLatch(1);
@@ -124,7 +124,7 @@ class DefaultSingleFlightTest {
 
     @Test
     void executeDoesNotCoalesceDifferentKeys() {
-        ExecutorService supplierExecutor = newExecutor(2);
+        ExecutorService supplierExecutor = newVirtualExecutor();
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
         CountDownLatch bothSuppliersStarted = new CountDownLatch(2);
 
@@ -180,7 +180,7 @@ class DefaultSingleFlightTest {
 
     @Test
     void executeAsyncCoalescesConcurrentCallsAndReturnsIndependentFutures() throws Exception {
-        ExecutorService supplierExecutor = newExecutor(1);
+        ExecutorService supplierExecutor = newVirtualExecutor();
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
         CountDownLatch supplierStarted = new CountDownLatch(1);
         CountDownLatch releaseSupplier = new CountDownLatch(1);
@@ -209,8 +209,8 @@ class DefaultSingleFlightTest {
 
     @Test
     void fourThreadsCallingDuringOneSlowTaskShareSingleExecution() throws Exception {
-        ExecutorService supplierExecutor = newExecutor(1);
-        ExecutorService callers = newExecutor(4);
+        ExecutorService supplierExecutor = newVirtualExecutor();
+        ExecutorService callers = newVirtualExecutor();
         DefaultSingleFlight<Integer> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
         CountDownLatch supplierStarted = new CountDownLatch(1);
         CountDownLatch releaseSupplier = new CountDownLatch(1);
@@ -238,9 +238,40 @@ class DefaultSingleFlightTest {
     }
 
     @Test
+    void hundredConcurrentCallersShareSingleHalfSecondExecution() throws Exception {
+        int callerCount = 500;
+        ExecutorService callers = newVirtualExecutor();
+        DefaultSingleFlight<Integer> singleFlight = new DefaultSingleFlight<>(Runnable::run);
+        AtomicInteger invocationCount = new AtomicInteger();
+        CountDownLatch callersReady = new CountDownLatch(callerCount);
+        CountDownLatch startCalls = new CountDownLatch(1);
+
+        List<Future<Integer>> results = new ArrayList<>(callerCount);
+        for (int i = 0; i < callerCount; i++) {
+            results.add(callers.submit(() -> {
+                callersReady.countDown();
+                await(startCalls);
+                return singleFlight.execute("key", () -> {
+                    int invocation = invocationCount.incrementAndGet();
+                    sleep(500);
+                    return invocation;
+                });
+            }));
+        }
+
+        assertTrue(callersReady.await(1, SECONDS));
+        startCalls.countDown();
+
+        for (Future<Integer> result : results) {
+            assertEquals(1, result.get(2, SECONDS));
+        }
+        assertEquals(1, invocationCount.get());
+    }
+
+    @Test
     void callerBurstsSeparatedByTaskCompletionRunOncePerBurst() throws Exception {
-        ExecutorService supplierExecutor = newExecutor(1);
-        ExecutorService callers = newExecutor(2);
+        ExecutorService supplierExecutor = newVirtualExecutor();
+        ExecutorService callers = newVirtualExecutor();
         DefaultSingleFlight<Integer> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
         CountDownLatch firstSupplierStarted = new CountDownLatch(1);
         CountDownLatch releaseFirstSupplier = new CountDownLatch(1);
@@ -287,7 +318,7 @@ class DefaultSingleFlightTest {
 
     @Test
     void cancellingOneAsyncFutureDoesNotCancelOtherCallers() throws Exception {
-        ExecutorService supplierExecutor = newExecutor(1);
+        ExecutorService supplierExecutor = newVirtualExecutor();
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
         CountDownLatch supplierStarted = new CountDownLatch(1);
         CountDownLatch releaseSupplier = new CountDownLatch(1);
@@ -310,8 +341,8 @@ class DefaultSingleFlightTest {
 
     @Test
     void synchronousFollowerCanJoinAsynchronousLeader() throws Exception {
-        ExecutorService supplierExecutor = newExecutor(1);
-        ExecutorService callerExecutor = newExecutor(1);
+        ExecutorService supplierExecutor = newVirtualExecutor();
+        ExecutorService callerExecutor = newVirtualExecutor();
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
         CountDownLatch supplierStarted = new CountDownLatch(1);
         CountDownLatch releaseSupplier = new CountDownLatch(1);
@@ -337,7 +368,7 @@ class DefaultSingleFlightTest {
 
     @Test
     void concurrentFollowersShareSupplierFailure() throws Exception {
-        ExecutorService supplierExecutor = newExecutor(1);
+        ExecutorService supplierExecutor = newVirtualExecutor();
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
         CountDownLatch supplierStarted = new CountDownLatch(1);
         CountDownLatch releaseSupplier = new CountDownLatch(1);
@@ -361,7 +392,7 @@ class DefaultSingleFlightTest {
 
     @Test
     void forgetAllowsNewCallWhileOldCallIsStillRunning() throws Exception {
-        ExecutorService supplierExecutor = newExecutor(1);
+        ExecutorService supplierExecutor = newVirtualExecutor();
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
         CountDownLatch firstSupplierStarted = new CountDownLatch(1);
         CountDownLatch releaseFirstSupplier = new CountDownLatch(1);
@@ -383,8 +414,8 @@ class DefaultSingleFlightTest {
 
     @Test
     void interruptedSynchronousFollowerThrowsInterruptedException() throws Exception {
-        ExecutorService supplierExecutor = newExecutor(1);
-        ExecutorService callerExecutor = newExecutor(1);
+        ExecutorService supplierExecutor = newVirtualExecutor();
+        ExecutorService callerExecutor = newVirtualExecutor();
         DefaultSingleFlight<String> singleFlight = new DefaultSingleFlight<>(supplierExecutor);
         CountDownLatch supplierStarted = new CountDownLatch(1);
         CountDownLatch releaseSupplier = new CountDownLatch(1);
@@ -434,8 +465,8 @@ class DefaultSingleFlightTest {
         assertThrows(NullPointerException.class, () -> singleFlight.forget(null));
     }
 
-    private ExecutorService newExecutor(int threadCount) {
-        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+    private ExecutorService newVirtualExecutor() {
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
         executors.add(executor);
         return executor;
     }
@@ -463,6 +494,15 @@ class DefaultSingleFlightTest {
         startCalls.countDown();
         assertTrue(callsRegistered.await(1, SECONDS));
         return results;
+    }
+
+    private static void sleep(long millis) {
+        try {
+            TimeUnit.MILLISECONDS.sleep(millis);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while sleeping", exception);
+        }
     }
 
     private static void await(CountDownLatch latch) {
