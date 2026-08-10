@@ -1,7 +1,6 @@
 package io.singleflight.model;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
@@ -21,8 +20,10 @@ public final class InFlightCall<T> {
     public SingleFlightResult<T> awaitResult() {
         try {
             return resultFuture.get();
-        } catch (Exception exception) {
+        } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+            return new SingleFlightResult<>(null, exception);
+        } catch (Exception exception) {
             return new SingleFlightResult<>(null, exception);
         }
     }
