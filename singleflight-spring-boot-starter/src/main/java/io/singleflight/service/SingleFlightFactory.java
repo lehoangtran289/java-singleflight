@@ -20,10 +20,11 @@ public final class SingleFlightFactory {
     /**
      * Creates an independent single-flight group.
      *
-     * @param <T> value type returned by this group
+     * @param <K> key type used to coalesce calls in this group
+     * @param <V> value type returned by this group
      * @return a new single-flight group backed by the configured executor
      */
-    public <T> SingleFlight<T> create() {
+    public <K, V> SingleFlight<K, V> create() {
         return new DefaultSingleFlight<>(executor);
     }
 }

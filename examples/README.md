@@ -16,7 +16,7 @@ The final line should be `Repository loads: 1 (expected 1)`.
 
 ## Spring Boot
 
-The Spring Boot example creates a typed `SingleFlight<User>` group and exposes a slow user lookup
+The Spring Boot example creates a typed `SingleFlight<Long, User>` group and exposes a slow user lookup
 through a REST endpoint.
 
 ```bash

@@ -42,7 +42,7 @@ public class SingleFlightAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(SingleFlight.class)
-    public SingleFlight<Object> singleFlight(SingleFlightFactory factory) {
+    public SingleFlight<Object, Object> singleFlight(SingleFlightFactory factory) {
         return factory.create();
     }
 }

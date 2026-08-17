@@ -6,18 +6,18 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Repository
-class UserRepository {
+public class UserRepository {
 
     private final AtomicInteger loadCount = new AtomicInteger();
 
-    User findById(long id) {
+    public User findById(long id) {
         int repositoryLoad = loadCount.incrementAndGet();
         System.out.printf("Loading user %d from the repository (load #%d)%n", id, repositoryLoad);
         sleep(500);
         return new User(id, "user-" + id, repositoryLoad);
     }
 
-    int loadCount() {
+    public int loadCount() {
         return loadCount.get();
     }
 

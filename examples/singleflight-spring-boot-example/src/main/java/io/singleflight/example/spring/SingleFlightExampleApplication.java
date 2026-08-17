@@ -9,12 +9,12 @@ import org.springframework.context.annotation.Bean;
 @SpringBootApplication
 public class SingleFlightExampleApplication {
 
-    public static void main(String[] args) {
+    static void main(String[] args) {
         SpringApplication.run(SingleFlightExampleApplication.class, args);
     }
 
     @Bean
-    SingleFlight<User> userSingleFlight(SingleFlightFactory factory) {
+    public SingleFlight<Long, User> userSingleFlight(SingleFlightFactory factory) {
         return factory.create();
     }
 }

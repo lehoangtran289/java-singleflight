@@ -88,16 +88,16 @@ class SingleFlightAutoConfigurationTest {
         contextRunner
                 .withBean("singleFlightExecutor", Executor.class, () -> directExecutor)
                 .run(context -> {
-                    SingleFlight<String> singleFlight = context.getBean(SingleFlightFactory.class).create();
+                    SingleFlight<String, String> singleFlight = context.getBean(SingleFlightFactory.class).create();
 
                     assertThat(context.getBean("singleFlightExecutor")).isSameAs(directExecutor);
-                    assertThat(singleFlight.executeAsync("key", () -> "value").join()).isEqualTo("value");
+                    assertThat(singleFlight.executeAsync("key", key -> "value").join()).isEqualTo("value");
                 });
     }
 
     @Test
     void backsOffWhenConsumerProvidesSingleFlightBean() {
-        DefaultSingleFlight<Object> customSingleFlight = new DefaultSingleFlight<>(Runnable::run);
+        DefaultSingleFlight<Object, Object> customSingleFlight = new DefaultSingleFlight<>(Runnable::run);
 
         contextRunner
                 .withBean("customSingleFlight", DefaultSingleFlight.class, () -> customSingleFlight)
@@ -111,12 +111,12 @@ class SingleFlightAutoConfigurationTest {
     void factoryCreatesTypedSingleFlightThatCoalescesCalls() {
         contextRunner
                 .run(context -> {
-                    SingleFlight<String> singleFlight = context.getBean(SingleFlightFactory.class).create();
+                    SingleFlight<String, String> singleFlight = context.getBean(SingleFlightFactory.class).create();
                     CountDownLatch supplierStarted = new CountDownLatch(1);
                     CountDownLatch releaseSupplier = new CountDownLatch(1);
                     AtomicInteger invocationCount = new AtomicInteger();
 
-                    CompletableFuture<String> first = singleFlight.executeAsync("user:123", () -> {
+                    CompletableFuture<String> first = singleFlight.executeAsync("user:123", key -> {
                         invocationCount.incrementAndGet();
                         supplierStarted.countDown();
                         await(releaseSupplier);
@@ -124,7 +124,7 @@ class SingleFlightAutoConfigurationTest {
                     });
                     assertThat(supplierStarted.await(1, SECONDS)).isTrue();
                     CompletableFuture<String> second = singleFlight.executeAsync(
-                            "user:123", () -> "unexpected");
+                            "user:123", key -> "unexpected");
 
                     releaseSupplier.countDown();
 

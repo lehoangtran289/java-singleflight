@@ -6,21 +6,21 @@ import org.springframework.stereotype.Service;
 import java.util.concurrent.ExecutionException;
 
 @Service
-class UserService {
+public class UserService {
 
-    private final SingleFlight<User> users;
+    private final SingleFlight<Long, User> users;
     private final UserRepository repository;
 
-    UserService(SingleFlight<User> users, UserRepository repository) {
+    public UserService(SingleFlight<Long, User> users, UserRepository repository) {
         this.users = users;
         this.repository = repository;
     }
 
-    User findById(long id) throws InterruptedException, ExecutionException {
-        return users.execute("user:" + id, () -> repository.findById(id));
+    public User findById(long id) throws InterruptedException, ExecutionException {
+        return users.execute(id, repository::findById);
     }
 
-    int repositoryLoadCount() {
+    public int repositoryLoadCount() {
         return repository.loadCount();
     }
 }

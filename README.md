@@ -29,9 +29,9 @@ Add the starter to a Spring Boot 4.1 application:
 
 The starter automatically creates:
 
-- a `SingleFlight<Object>` bean named `singleFlight`;
+- a `SingleFlight<Object, Object>` bean named `singleFlight`;
 - a `SingleFlightFactory` for creating type-safe, independent groups;
-- an executor named `singleFlightExecutor` for asynchronous suppliers.
+- an executor named `singleFlightExecutor` for asynchronous computations.
 
 Configure the managed executor in `application.yaml`:
 
@@ -54,7 +54,7 @@ import org.springframework.context.annotation.Configuration;
 class SingleFlightConfiguration {
 
     @Bean
-    SingleFlight<User> userSingleFlight(SingleFlightFactory factory) {
+    SingleFlight<Long, User> userSingleFlight(SingleFlightFactory factory) {
         return factory.create();
     }
 }
@@ -71,21 +71,21 @@ import java.util.concurrent.ExecutionException;
 @Service
 class UserService {
 
-    private final SingleFlight<User> userSingleFlight;
+    private final SingleFlight<Long, User> userSingleFlight;
     private final UserRepository repository;
 
-    UserService(SingleFlight<User> userSingleFlight, UserRepository repository) {
+    UserService(SingleFlight<Long, User> userSingleFlight, UserRepository repository) {
         this.userSingleFlight = userSingleFlight;
         this.repository = repository;
     }
 
     User findById(long id) throws InterruptedException, ExecutionException {
-        return userSingleFlight.execute("user:" + id, () -> repository.findById(id));
+        return userSingleFlight.execute(id, repository::findById);
     }
 }
 ```
 
-Concurrent calls with the same key share one supplier execution. Different keys can execute in
+Concurrent calls with the same key share one computation. Different keys can execute in
 parallel, and completed calls are removed immediately.
 
 ### Overrides

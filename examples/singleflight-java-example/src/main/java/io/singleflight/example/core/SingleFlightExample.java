@@ -10,7 +10,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
+import java.util.function.Function;
 
 public final class SingleFlightExample {
 
@@ -19,16 +19,16 @@ public final class SingleFlightExample {
     private SingleFlightExample() {
     }
 
-    public static void main(String[] args) throws InterruptedException {
+    static void main() throws InterruptedException {
         AtomicInteger repositoryLoads = new AtomicInteger();
         CountDownLatch repositoryStarted = new CountDownLatch(1);
         CountDownLatch releaseRepository = new CountDownLatch(1);
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            SingleFlight<User> users = new DefaultSingleFlight<>(executor);
-            Supplier<User> loadUser = () -> {
+            SingleFlight<String, User> users = new DefaultSingleFlight<>(executor);
+            Function<String, User> loadUser = key -> {
                 int loadNumber = repositoryLoads.incrementAndGet();
-                System.out.printf("Repository load #%d on %s%n", loadNumber, Thread.currentThread());
+                System.out.printf("Repository load #%d for %s on %s%n", loadNumber, key, Thread.currentThread());
                 repositoryStarted.countDown();
                 await(releaseRepository);
                 return new User(42, "Ada Lovelace");
